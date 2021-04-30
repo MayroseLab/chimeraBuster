@@ -10,6 +10,7 @@ import gffutils
 from intervaltree import IntervalTree, Interval
 from pafpy import PafFile
 #from Bio import SeqIO
+from copy import deepcopy
 
 def run_minimap(genome, transcripts):
   return
@@ -39,7 +40,7 @@ def paf_records_to_intervals(paf_records):
   for rec in paf_records:
     if rec.tname not in iv_dict:
       iv_dict[rec.tname] = IntervalTree()
-    iv_dict[rec.tname].add(Interval(rec.tstart,rec.tend,rec.qname))
+    iv_dict[rec.tname].add(Interval(rec.tstart,rec.tend,[rec.qname]))
   return iv_dict
 
 def find_mapping_regions(iv_dict):
@@ -48,9 +49,11 @@ def find_mapping_regions(iv_dict):
   transcripts were mapped. These
   regions will be refined later.
   """
-  res = {}
-  for chrom in iv_dict:
-    res[chrom] = iv_dict[chrom].merge_overlaps(data_reducer=lambda iv1,iv2: iv1+iv2)
+  res = deepcopy(iv_dict)
+  for chrom in res:
+    res[chrom].merge_overlaps(data_reducer=lambda iv1,iv2: iv1+iv2)
+  n_mr = sum([len(res[chrom]) for chrom in res])
+  logging.info("{} mapping regions detected.".format(n_mr))
   return res
 
 def detect_bridges(iv_tree):
@@ -62,7 +65,7 @@ def detect_bridges(iv_tree):
   """
   return []
 
-def refine_mapping_regions(iv_tree, mapping_regions, max_bridges_frac=0.1):
+def refine_mapping_regions(iv_tree, mapping_regions, max_bridges_frac=0.1, min_transcripts=2):
   """
   *** TODO ***
   Works through rough mapping regions
@@ -72,7 +75,13 @@ def refine_mapping_regions(iv_tree, mapping_regions, max_bridges_frac=0.1):
   #for mr in mapping_regions:
   #  mr_intervals = IntervalTree(iv_tree[mr.begin:mr.end])
   #  mr_bridges = detect_bridges(mr_intervals)
-  return iv_tree
+  refined = IntervalTree()
+  for mr in mapping_regions:
+    mr_transcripts = iv_tree[mr.begin:mr.end]
+    if len(mr_transcripts) < min_transcripts:
+      continue
+    refined.add(mr)
+  return refined
 
 def intervals_frac_overlap(iv1, iv2):
   """
@@ -122,6 +131,7 @@ def main():
   parser.add_argument('-d', '--gff_db', default=None, help='GFF DB from a previous run', type=lambda x: is_valid_file(parser, x))
   parser.add_argument('-o', '--output', help='Output path', required=True)
   parser.add_argument('-b', '--max_bridges_frac', type=float, default=0.1, help='')
+  parser.add_argument('-n', '--min_transcripts', type=int, default=2, help='Minimum number of transcripts in mapping region')
   parser.add_argument('-v', '--verbose', action="store_true", default=False, help='Increase verbosity')
   args = parser.parse_args()
 
@@ -165,7 +175,7 @@ def main():
   mapping_intervals = paf_records_to_intervals(paf_hq_records)
   mapping_regions = find_mapping_regions(mapping_intervals)
   for chrom in mapping_regions:
-    mapping_regions[chrom] = refine_mapping_regions(mapping_intervals[chrom], mapping_regions[chrom])
+    mapping_regions[chrom] = refine_mapping_regions(mapping_intervals[chrom], mapping_regions[chrom], min_transcripts=args.min_transcripts)
 
   # Read GFF
   if args.gff:
