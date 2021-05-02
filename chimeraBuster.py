@@ -11,6 +11,9 @@ from intervaltree import IntervalTree, Interval
 from pafpy import PafFile
 #from Bio import SeqIO
 from copy import deepcopy
+from itertools import combinations, chain
+from sklearn.cluster import DBSCAN
+import pandas as pd
 
 def run_minimap(genome, transcripts):
   return
@@ -56,39 +59,97 @@ def find_mapping_regions(iv_dict):
   logging.info("{} mapping regions detected.".format(n_mr))
   return res
 
-def detect_bridges(iv_tree):
-  """
-  *** TODO ***
-  Given an interval tree, detect
-  intervals which "bridge over"
-  other, non-connected intervals.
-  """
-  return []
-
-def refine_mapping_regions(iv_tree, mapping_regions, max_bridges_frac=0.1, min_transcripts=2):
-  """
-  *** TODO ***
-  Works through rough mapping regions
-  and refines each by removing misleading
-  intervals and 
-  """
-  #for mr in mapping_regions:
-  #  mr_intervals = IntervalTree(iv_tree[mr.begin:mr.end])
-  #  mr_bridges = detect_bridges(mr_intervals)
-  refined = IntervalTree()
-  for mr in mapping_regions:
-    mr_transcripts = iv_tree[mr.begin:mr.end]
-    if len(mr_transcripts) < min_transcripts:
-      continue
-    refined.add(mr)
-  return refined
-
 def intervals_frac_overlap(iv1, iv2):
   """
   Given two intervals, calculates the
   fraction of iv1 covered by iv2
   """
   return iv1.overlap_size(iv2.begin, iv2.end) / iv1.length()
+
+def is_bridge(iv1, iv2, iv3):
+  """
+  Given 3 intervals, determines if
+  iv1 is a bridge connecting iv2 and iv3.
+  To be considered a bridge, iv2 and iv3
+  must *not* overlap, and iv1 must
+  connect them
+  """
+  # check if iv2 and iv3 overlap
+  if intervals_frac_overlap(iv2, iv3) > 0:
+    return False
+  # check if iv1 is bridge
+  if intervals_frac_overlap(iv1, iv2) > 0 and intervals_frac_overlap(iv1, iv3) > 0:
+    return True
+  return False
+
+def remove_outliers(intervals, dbscan_eps=300, dbscan_minPts=4, max_outlier_frac=0.2):
+  """
+  Given a set of intervals, detect
+  outliers based on start and end
+  coordinates, using the DBSCAN algorithm.
+  If the fraction of intervals detected as
+  outliers exceeds max_outlier_frac, this is
+  an unreliable case - return original intervals set.
+  Otherwise - return set of non-outlier intervals
+  *TODO*: automatically choose epsilon and minPts
+  """
+  # create DF of interval start-end positions
+  df = pd.DataFrame([[iv.begin, iv.end, iv] for iv in intervals])
+  df.columns = ['start', 'end', 'interval']
+  # cluster intervals using DBSCAN
+  clustering = DBSCAN(eps=dbscan_eps, min_samples=dbscan_minPts).fit(df[['start','end']])
+  df['cluster'] = pd.Series(clustering.labels_).astype(str)
+  # intervals with cluster '-1' are outliers - suspected bridges or other
+  n_outliers = df.query('cluster == "-1"').shape[0]
+  n_iv = len(intervals)
+  outlier_frac = n_outliers / n_iv
+  logging.debug("{} out of {} intervals (fraction = {}) detected as outliers".format(n_outliers, n_iv, outlier_frac))
+  if outlier_frac > max_outlier_frac:
+    return intervals
+  return set(df.query('cluster != "-1"')['interval'])
+
+def detect_bridges(intervals, dbscan_eps=300, dbscan_minPts=4):
+  """
+  Given a set of intervals, detect
+  intervals which "bridge over"
+  other, non-connected intervals.
+  """
+  transcript_pairs = list(combinations(intervals, 2))
+  for pair in transcript_pairs:
+    if intervals_frac_overlap(pair[0], pair[1]):
+      continue
+    for interval in intervals:
+      if is_bridge(interval, pair[0], pair[1]):
+        pair_t = (pair[0], pair[1])
+        if pair_t not in bridges:
+          bridges[pair_t] = []
+        bridges[pair_t].append(interval)
+  return bridges
+
+def refine_mapping_regions(iv_tree, mapping_regions, min_transcripts=2):
+  """
+  *** TODO ***
+  Works through rough mapping regions
+  and refines each by removing misleading
+  intervals and 
+  """
+  refined = IntervalTree()
+  i = 1
+  for mr in mapping_regions:
+    print(i)
+    i += 1
+    logging.debug("Refining mapping region {}-{}".format(mr.begin, mr.end))
+    # extract transcripts in mapping region
+    mr_transcripts = iv_tree[mr.begin:mr.end]
+    # check if enough transcripts in MR
+    n_trans = len(mr_transcripts)
+    if n_trans < min_transcripts:
+      continue
+    # remove outliers
+    mr_transcripts_no_outliers = IntervalTree(remove_outliers(mr_transcripts))
+    mr_transcripts_no_outliers.merge_overlaps(data_reducer=lambda iv1,iv2: iv1+iv2)
+    refined = refined.union(mr_transcripts_no_outliers)
+  return refined
 
 def detect_chimeras(gff_db, mapping_regions, min_intersect_frac=0.5):
   """
@@ -130,7 +191,7 @@ def main():
   parser.add_argument('-m', '--mapping', default=None, help='Transcripts mapping to the genome, in minimap2 PAF format', type=lambda x: is_valid_file(parser, x))
   parser.add_argument('-d', '--gff_db', default=None, help='GFF DB from a previous run', type=lambda x: is_valid_file(parser, x))
   parser.add_argument('-o', '--output', help='Output path', required=True)
-  parser.add_argument('-b', '--max_bridges_frac', type=float, default=0.1, help='')
+  parser.add_argument('-r', '--do_not_refine', help='Skip mapping region refining step for a quick-and-dirty analysis', action='store_true', default=False)
   parser.add_argument('-n', '--min_transcripts', type=int, default=2, help='Minimum number of transcripts in mapping region')
   parser.add_argument('-v', '--verbose', action="store_true", default=False, help='Increase verbosity')
   args = parser.parse_args()
@@ -174,8 +235,10 @@ def main():
   logging.info("Analyzing transcript mapping...")
   mapping_intervals = paf_records_to_intervals(paf_hq_records)
   mapping_regions = find_mapping_regions(mapping_intervals)
-  for chrom in mapping_regions:
-    mapping_regions[chrom] = refine_mapping_regions(mapping_intervals[chrom], mapping_regions[chrom], min_transcripts=args.min_transcripts)
+  if not args.do_not_refine:
+    for chrom in mapping_regions:
+      logging.debug("Refining mapping regions on chromosome {}...".format(chrom))
+      mapping_regions[chrom] = refine_mapping_regions(mapping_intervals[chrom], mapping_regions[chrom], min_transcripts=args.min_transcripts)
 
   # Read GFF
   if args.gff:
