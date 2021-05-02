@@ -136,8 +136,6 @@ def refine_mapping_regions(iv_tree, mapping_regions, min_transcripts=2):
   refined = IntervalTree()
   i = 1
   for mr in mapping_regions:
-    print(i)
-    i += 1
     logging.debug("Refining mapping region {}-{}".format(mr.begin, mr.end))
     # extract transcripts in mapping region
     mr_transcripts = iv_tree[mr.begin:mr.end]
