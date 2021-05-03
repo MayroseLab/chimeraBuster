@@ -19,9 +19,8 @@ from multiprocessing import Pool
 def run_minimap(genome, transcripts):
   return
 
-def filter_paf(paf_path):
+def filter_paf(paf_path, min_qcov=0.95):
   """
-  *** TODO ***
   Filter a PAF file according to
   specified criteria. Return a list
   of PAF records
@@ -29,7 +28,8 @@ def filter_paf(paf_path):
   records = []
   with PafFile(paf_path) as paf:
     for record in paf:
-      records.append(record)
+      if record.mlen / record.qlen >= min_qcov:
+        records.append(record)
   return records
 
 def paf_records_to_intervals(paf_records):
@@ -161,6 +161,8 @@ def detect_chimeras(gff_db, mapping_regions, min_intersect_frac=0.5):
   for gene in gff_db.features_of_type('gene'):
     gene_id = gene['ID'][0]
     chrom = gene.seqid
+    if chrom not in mapping_regions:
+      continue
     intersect_mappings = mapping_regions[chrom][gene.start:gene.end]
     gene_iv = Interval(gene.start, gene.end, gene_id)
     intersect_mappings = [im for im in intersect_mappings if intervals_frac_overlap(im,gene_iv) >= min_intersect_frac]
@@ -190,6 +192,7 @@ def main():
   parser.add_argument('-o', '--output', help='Output path', required=True)
   parser.add_argument('-r', '--do_not_refine', help='Skip mapping region refining step for a quick-and-dirty analysis', action='store_true', default=False)
   parser.add_argument('-n', '--min_transcripts', type=int, default=2, help='Minimum number of transcripts in mapping region')
+  parser.add_argument('-q', '--min_query_cov', type=float, default=0.95, help='Minimum transcript query coverage (0-1)')
   parser.add_argument('-c', '--cpus', type=int, default=1, help='Number of CPUs to use')
   parser.add_argument('-v', '--verbose', action="store_true", default=False, help='Increase verbosity')
   args = parser.parse_args()
