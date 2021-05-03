@@ -14,6 +14,7 @@ from copy import deepcopy
 from itertools import combinations, chain
 from sklearn.cluster import DBSCAN
 import pandas as pd
+from multiprocessing import Pool
 
 def run_minimap(genome, transcripts):
   return
@@ -108,46 +109,44 @@ def remove_outliers(intervals, dbscan_eps=300, dbscan_minPts=4, max_outlier_frac
     return intervals
   return set(df.query('cluster != "-1"')['interval'])
 
-def detect_bridges(intervals, dbscan_eps=300, dbscan_minPts=4):
-  """
-  Given a set of intervals, detect
-  intervals which "bridge over"
-  other, non-connected intervals.
-  """
-  transcript_pairs = list(combinations(intervals, 2))
-  for pair in transcript_pairs:
-    if intervals_frac_overlap(pair[0], pair[1]):
-      continue
-    for interval in intervals:
-      if is_bridge(interval, pair[0], pair[1]):
-        pair_t = (pair[0], pair[1])
-        if pair_t not in bridges:
-          bridges[pair_t] = []
-        bridges[pair_t].append(interval)
-  return bridges
+#def detect_bridges(intervals, dbscan_eps=300, dbscan_minPts=4):
+#  """
+#  Given a set of intervals, detect
+#  intervals which "bridge over"
+#  other, non-connected intervals.
+#  """
+#  transcript_pairs = list(combinations(intervals, 2))
+#  for pair in transcript_pairs:
+#    if intervals_frac_overlap(pair[0], pair[1]):
+#      continue
+#    for interval in intervals:
+#      if is_bridge(interval, pair[0], pair[1]):
+#        pair_t = (pair[0], pair[1])
+#        if pair_t not in bridges:
+#          bridges[pair_t] = []
+#        bridges[pair_t].append(interval)
+#  return bridges
 
-def refine_mapping_regions(iv_tree, mapping_regions, min_transcripts=2):
+def refine_mapping_regions(iv_tree, mapping_regions, min_transcripts=2, ncpu=1):
   """
-  *** TODO ***
   Works through rough mapping regions
   and refines each by removing misleading
   intervals and 
   """
-  refined = IntervalTree()
-  i = 1
-  for mr in mapping_regions:
-    logging.debug("Refining mapping region {}-{}".format(mr.begin, mr.end))
-    # extract transcripts in mapping region
-    mr_transcripts = iv_tree[mr.begin:mr.end]
-    # check if enough transcripts in MR
-    n_trans = len(mr_transcripts)
-    if n_trans < min_transcripts:
-      continue
-    # remove outliers
-    mr_transcripts_no_outliers = IntervalTree(remove_outliers(mr_transcripts))
-    mr_transcripts_no_outliers.merge_overlaps(data_reducer=lambda iv1,iv2: iv1+iv2)
-    refined = refined.union(mr_transcripts_no_outliers)
-  return refined
+  # check if enough transcripts in MR
+  large = lambda mr: len(iv_tree[mr.begin:mr.end]) >= min_transcripts
+  mapping_regions_filter = IntervalTree(filter(large, mapping_regions))
+  # remove outliers
+  transcripts_per_mr = [iv_tree[mr.begin:mr.end] for mr in mapping_regions_filter]
+  with Pool(ncpu) as pool:
+    transcripts_per_mr_rem_outliers = pool.map(remove_outliers, transcripts_per_mr)
+    # transcripts_per_mr_rem_outliers is a list of sets of Intervals
+    mapping_regions_rem_outliers = [IntervalTree(mr) for mr in transcripts_per_mr_rem_outliers]
+    refined = IntervalTree()
+    for mr in mapping_regions_rem_outliers:
+      mr.merge_overlaps()
+      refined = refined.union(mr)
+    return refined
 
 def detect_chimeras(gff_db, mapping_regions, min_intersect_frac=0.5):
   """
@@ -191,6 +190,7 @@ def main():
   parser.add_argument('-o', '--output', help='Output path', required=True)
   parser.add_argument('-r', '--do_not_refine', help='Skip mapping region refining step for a quick-and-dirty analysis', action='store_true', default=False)
   parser.add_argument('-n', '--min_transcripts', type=int, default=2, help='Minimum number of transcripts in mapping region')
+  parser.add_argument('-c', '--cpus', type=int, default=1, help='Number of CPUs to use')
   parser.add_argument('-v', '--verbose', action="store_true", default=False, help='Increase verbosity')
   args = parser.parse_args()
 
@@ -230,13 +230,14 @@ def main():
   logging.debug("{} HQ PAF records".format(len(paf_hq_records)))
 
   # Find and refine mapping regions
-  logging.info("Analyzing transcript mapping...")
+  logging.info("Computing transcript mapping regions...")
   mapping_intervals = paf_records_to_intervals(paf_hq_records)
   mapping_regions = find_mapping_regions(mapping_intervals)
   if not args.do_not_refine:
+    logging.info("Refining mapping regions...")
     for chrom in mapping_regions:
       logging.debug("Refining mapping regions on chromosome {}...".format(chrom))
-      mapping_regions[chrom] = refine_mapping_regions(mapping_intervals[chrom], mapping_regions[chrom], min_transcripts=args.min_transcripts)
+      mapping_regions[chrom] = refine_mapping_regions(mapping_intervals[chrom], mapping_regions[chrom], min_transcripts=args.min_transcripts, ncpu=args.cpus)
 
   # Read GFF
   if args.gff:
