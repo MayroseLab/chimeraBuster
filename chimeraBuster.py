@@ -9,7 +9,7 @@ import logging
 import gffutils
 from intervaltree import IntervalTree, Interval
 from pafpy import PafFile
-#from Bio import SeqIO
+from Bio import SeqIO
 from copy import deepcopy
 from itertools import combinations, chain
 from sklearn.cluster import DBSCAN
@@ -157,7 +157,7 @@ def detect_chimeras(gff_db, mapping_regions, min_intersect_frac=0.5):
   that overlaps with the gene to be
   considered.
   """
-  chimeras = []
+  chimeras = {}
   for gene in gff_db.features_of_type('gene'):
     gene_id = gene['ID'][0]
     chrom = gene.seqid
@@ -169,7 +169,7 @@ def detect_chimeras(gff_db, mapping_regions, min_intersect_frac=0.5):
     n_im = len(intersect_mappings)
     logging.debug("Gene {} : {} intersecting mapping regions".format(gene_id, n_im))
     if n_im > 1:
-      chimeras.append(gene_id)
+      chimeras[gene_id] = intersect_mappings
   return chimeras
     
 def is_valid_file(parser, arg):
@@ -177,6 +177,224 @@ def is_valid_file(parser, arg):
     parser.error("The file %s does not exist!" % arg)
   else:
     return arg
+
+def closest(lst, K):
+  """Find closest number to K in list"""
+  return lst[min(range(len(lst)), key = lambda i: abs(lst[i]-K))]
+
+def find_nearest_exon(gff_db, gene_feature, coordinate, search_direction=None):
+  """
+  Given a gene feature and a genomic
+  coordinate, find the nearest exon
+  of that gene. If search_direction
+  is None, look in both directions.
+  If 'upstrea' or 'downstream' - only
+  search in this direction.
+  """
+  assert search_direction in {None, 'upstream', 'downstream'} , "search_direction must be None or 'upstream' or'downstream'"
+  # find all gene exons - save as list of intervals
+  gene_exons = [Interval(exon.start, exon.end, exon) for exon in gff_db.children(gene_feature, featuretype='exon', order_by='start')]
+  # if search direction turned on
+  if search_direction == 'downstream':
+    gene_exons = [exon for exon in gene_exons if exon.end >= coordinate]
+  elif search_direction == 'upstream':
+    gene_exons = [exon for exon in gene_exons if exon.begin <= coordinate]
+  # find nearest
+  if (search_direction == 'downstream' and gene_exons[-1].end < coordinate) or (search_direction == 'upstream' and gene_exons[0].end > coordinate):
+    return None
+  exons_start_end = [[exon.begin, exon.end] for exon in gene_exons]
+  exons_start_end = list(chain(*exons_start_end))	# list of all start and end positions
+  nearest_point = closest(exons_start_end, coordinate)	# find closest start/end
+  nearest_exon = IntervalTree(gene_exons)[nearest_point-1:nearest_point+1].pop().data	# +/- 1 to avoid issues with including interval end
+  return nearest_exon
+
+def correct_exon(exon_feature, chrom_seq, max_coord=None, min_coord=None):
+  """
+  Correct an exon by finding the earliest
+  stop codon between the exon start and the
+  gap end.
+  exon_feature : gffutils exon
+  max_coord : highest genomic position to extend
+    the exon to when searching for stop codons
+  min_coord : lowest genomic position to extend
+    the exon to when searching for start codons
+  chrom_seq : SeqRecord object of the chromosome
+  Returns a modified exon feature or, if
+  no stop codon found - the original exon.
+  """
+  assert (max_coord or min_coord) and not (max_coord and min_coord), "Must provide max_coord or min_coord, but not both"
+  stop_codons = {'TAA','TAG','TGA'}
+  start_codon = {'ATG'}
+  if exon_feature.strand == '+':
+    if max_coord:	# exon before gap
+      search_region = (exon_feature.start, max_coord)
+      search_for = stop_codons
+    elif min_coord:	# exon after gap
+      search_region = (min_coord, exon_feature.end)
+      search_for = start_codon
+  elif exon_feature.strand == '-':
+    if min_coord:	# exon before gap
+      search_region = (min_coord, exon_feature.end)
+      search_for = stop_codons
+    elif max_coord:	# exon after gap
+      search_region = (exon_feature.start, max_coord)
+      search_for = start_codon
+
+  search_region_seq = chrom_seq[search_region[0]:search_region[1]+1]
+  if exon_feature.strand == '-':
+    search_region_seq = search_region_seq.reverse_complement()
+  codons = [search_region_seq[i:i+3] for i in range(0,len(search_region_seq),3)]
+  if min_coord:
+    codons.reverse()
+
+  extend_to_codon = None	# index of codon where the corrected exon should end
+  i = 0
+  for codon in codons:
+    if str(codon) in search_for:
+      extend_to_codon = i
+      break
+    i += 1
+  if not extend_to_codon:
+    return exon_feature
+  exon_feature_corrected = deepcopy(exon_feature)
+  if max_coord:
+    exon_feature_corrected.end = exon_feature_corrected.start + i*3
+  elif min_coord:
+    exon_feature_corrected.start = exon_feature_corrected.end - 3*i
+  return exon_feature_corrected
+
+def split_gene(gff_db, gene_feature, split_coords=[]):
+  """
+  Splits a gene feature into multiple
+  gene features by cutting at given
+  genomic coordinates. split_coords
+  is a list of (start,end) pairs.
+  """
+  new_features = []
+  i = 1
+  for pair in split_coords:
+    start, end = pair
+    # create the gene feature
+    new_gene = deepcopy(gene_feature)
+    new_gene_id = new_gene['ID'][0] + '_%s' % i
+    new_gene['ID'][0] = new_gene_id
+    new_gene.start = start
+    new_gene.end = end
+    new_gene.source = 'chimeraBuster'
+    # create mRNA feature
+    new_mrna_id = new_gene_id + '_mRNA_1'
+    new_mrna = deepcopy(new_gene)
+    new_mrna.featuretype = 'mRNA'
+    new_mrna['ID'][0] = new_mrna_id
+    new_mrna['Parent'] = [new_gene_id]
+    # get exon and CDS features within the start-end coordinates
+    all_features = [deepcopy(feat) for feat in gff_db.region(region=(gene_feature.seqid, start, end))]
+    exons = list(filter(lambda feat: feat.featuretype == "exon", all_features))
+    cds = list(filter(lambda feat: feat.featuretype == "CDS", all_features))
+    exons.sort(key=lambda feat: feat.start)
+    cds.sort(key=lambda feat: feat.start)
+    # set start and end coordinates for first and last exon/CDS
+    exons[0].start = start
+    exons[-1].end = end
+    cds[0].start = start
+    cds[-1].end = end
+    # modify exon and CDS features
+    for j in range(len(exons)):
+      exons[j]['ID'][0] = '%s_exon_%s' %(new_mrna_id, j+1)
+      exons[j]['Parent'][0] = str(new_mrna_id)
+    for j in range(len(cds)):
+      cds[j]['ID'][0] = '%s_CDS_%s' %(new_mrna_id, j+1)
+      cds[j]['Parent'][0] = str(new_mrna_id)
+
+    # add new features
+    new_features.extend([new_gene, new_mrna] + exons + cds)
+    i += 1
+
+  return new_features
+
+def correct_chimeric_gene(gene_id, chimeric_genes, gff_db, mapping_regions, genome_seq_dict):
+  """
+  Break a chimeric gene according to
+  mapping regions and fix the ends
+  of resulting genes
+  """
+  mapping_regions = IntervalTree(chimeric_genes[gene_id])
+
+  # find the gap region/s between MRs
+  gene_feature = gff_db[gene_id]
+  gene_iv = Interval(gene_feature.start, gene_feature.end, gene_id)
+  gap_regions = IntervalTree([gene_iv])
+  for mr in mapping_regions:
+    gap_regions.chop(mr.begin, mr.end)
+  # remove terminal gaps
+  term = []
+  for gap in gap_regions:
+    if gap.begin == gene_feature.start or gap.end == gene_feature.end:
+      term.append(gap)
+  for term_gap in term:
+    gap_regions.remove(term_gap)
+  # sort gap regions by position (5' to 3')
+  rev = (gene_feature.strand == '-')	# True or False
+  gap_regions = sorted(list(gap_regions), key=lambda iv: iv.begin, reverse=rev)
+
+  # split gene
+  chrom_seq = genome_seq_dict[gene_feature.seqid]
+  
+  exons_before_gaps = []
+  exons_after_gaps = []
+  for gap in gap_regions:
+    # find last exon before the gap and first exon after the gap
+    # (these exons will be corrected)
+    if gene_feature.strand == '+':
+      exon_before_gap = find_nearest_exon(gff_db, gene_feature, gap.begin, search_direction='upstream')
+      exon_after_gap = find_nearest_exon(gff_db, gene_feature, gap.end, search_direction='downstream')
+    elif gene_feature.strand == '-':
+      exon_before_gap = find_nearest_exon(gff_db, gene_feature, gap.end, search_direction='downstream')
+      exon_after_gap = find_nearest_exon(gff_db, gene_feature, gap.begin, search_direction='upstream')     
+    if not (exon_before_gap and exon_after_gap):
+      # if for some reason no exon was found - skip and do not split on this gap
+      continue
+    # correct exons
+    if gene_feature.strand == '+':
+      exon_before_gap_corrected = correct_exon(exon_before_gap, chrom_seq, max_coord=gap.end)
+      exon_after_gap_corrected = correct_exon(exon_after_gap, chrom_seq, min_coord=exon_before_gap_corrected.end)
+    elif gene_feature.strand == '-':
+      exon_before_gap_corrected = correct_exon(exon_before_gap, chrom_seq, min_coord=gap.begin)
+      exon_after_gap_corrected = correct_exon(exon_after_gap, chrom_seq, max_coord=exon_before_gap_corrected.start)
+    exons_before_gaps.append(exon_before_gap_corrected)
+    exons_after_gaps.append(exon_after_gap_corrected) 
+  # correct gene according to corrected exons
+  # create start/end coordinates for gene splitting
+  if gene_feature.strand == '+':
+    splits_starts = [gene_feature.start] + [eag.start for eag in exons_after_gaps]
+    splits_ends = [ebg.end for ebg in exons_before_gaps] + [gene_feature.end]
+  elif gene_feature.strand == '-':
+    splits_starts = [gene_feature.start] + [ebg.start for ebg in reversed(exons_before_gaps)]
+    splits_ends = [eag.end for eag in reversed(exons_after_gaps)] + [gene_feature.end]
+  split_coords = list(zip(splits_starts, splits_ends))
+  # split gene (and adjust children features)
+  new_features = split_gene(gff_db, gene_feature, split_coords=split_coords)
+  # create list of features to remove (original gene + children features)
+  remove_features = [gene_feature] + list(gff_db.children(gene_feature))
+
+  return new_features, remove_features
+
+def update_gff_db(gff_db, new_features, features_to_remove, new_db_path):
+  """
+  Create a new GFF DB. Add all features
+  from gff_db, except those listed in
+  features_to_remove, and add new features
+  from new_features.
+  This function is only needed because the
+  gffutils.FeatureDB.update() method doesn't
+  work (sqlite3 DB locked error)
+  """
+  features_from_orig = list(filter(lambda feat: feat not in features_to_remove, gff_db.all_features()))
+  features_to_add = features_from_orig + new_features
+  new_gff_db = gffutils.create_db(data=features_to_add, dbfn=new_db_path, merge_strategy='create_unique')
+  new_gff_db = gffutils.FeatureDB(new_db_path)
+  return new_gff_db
+
 
 def main():
 
@@ -253,19 +471,38 @@ def main():
   gff_db = gffutils.FeatureDB(db_path, keep_order=True)
 
   # Read genome fasta
-  #chrom_seq = SeqIO.to_dict(SeqIO.parse(args.genome_fasta, "fasta"))
+  logging.info("Loading genome FASTA...")
+  chrom_seq = SeqIO.to_dict(SeqIO.parse(args.genome_fasta, "fasta"))
 
   # Detect chimeric genes
   logging.info("Detecting chimeric genes...")
   chimeric_genes = detect_chimeras(gff_db, mapping_regions)
   chimeras_list = os.path.join(args.output, 'chimeric_genes.list')
   with open(chimeras_list, 'w') as cfo:
-    print('\n'.join(chimeric_genes), file=cfo)
+    print('\n'.join(chimeric_genes.keys()), file=cfo)
 
   # Correct chimeras
-  #logging.info("Correcting chimeric genes...")
+  logging.info("Correcting chimeric genes...")
+  new_features = []
+  remove_features = []
+  for chimera in chimeric_genes.keys():
+    chimera_split_new_features, chimera_split_remove_features = correct_chimeric_gene(chimera, chimeric_genes, gff_db, mapping_regions, chrom_seq)
+    new_features.extend(chimera_split_new_features)
+    remove_features.extend(chimera_split_remove_features)
+
+  # Create GFF DB with corrected chimeras
+  logging.info("Updating GFF DB...")
+  corrected_db_path = os.path.join(args.output, os.path.basename(args.gff) + '.corrected.db')
+  corrected_gff_db = update_gff_db(gff_db, new_features, set(remove_features), corrected_db_path)
   
   # Print output
+  logging.info("Writing corrected GFF...")
+  out_gff_path = os.path.join(args.output, os.path.basename(args.gff) + '.corrected.gff')
+  with open(out_gff_path, 'w') as fo:
+    for feat in corrected_gff_db.all_features():
+      print(str(feat), file=fo)
+
+  logging.info("chimeraBuster is done!")
 
 if __name__ == "__main__":
   main()
