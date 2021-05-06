@@ -499,6 +499,7 @@ def main():
   logging.info("Writing corrected GFF...")
   out_gff_path = os.path.join(args.output, os.path.basename(args.gff) + '.corrected.gff')
   with open(out_gff_path, 'w') as fo:
+    print("##gff-version 3", file=fo)
     for feat in corrected_gff_db.all_features():
       print(str(feat), file=fo)
 
