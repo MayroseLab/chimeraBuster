@@ -391,7 +391,7 @@ def update_gff_db(gff_db, new_features, features_to_remove, new_db_path):
   """
   features_from_orig = list(filter(lambda feat: feat not in features_to_remove, gff_db.all_features()))
   features_to_add = features_from_orig + new_features
-  new_gff_db = gffutils.create_db(data=features_to_add, dbfn=new_db_path, merge_strategy='create_unique')
+  new_gff_db = gffutils.create_db(data=features_to_add, dbfn=new_db_path, merge_strategy='create_unique', force=True)
   new_gff_db = gffutils.FeatureDB(new_db_path)
   return new_gff_db
 
@@ -464,7 +464,7 @@ def main():
   if args.gff:
     logging.info("Loading GFF from file...")
     db_path = os.path.join(args.output, os.path.basename(args.gff) + '.db')
-    gff_db = gffutils.create_db(args.gff, dbfn=db_path, keep_order=True, merge_strategy='create_unique', sort_attribute_values=True, verbose=args.verbose)
+    gff_db = gffutils.create_db(args.gff, dbfn=db_path, keep_order=True, merge_strategy='create_unique', sort_attribute_values=True, verbose=args.verbose, force=True)
   else:
     logging.info("Loading GFF from DB...")
     db_path = args.gff_db
