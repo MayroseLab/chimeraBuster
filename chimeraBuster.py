@@ -15,9 +15,16 @@ from itertools import combinations, chain
 from sklearn.cluster import DBSCAN
 import pandas as pd
 from multiprocessing import Pool
+import subprocess
 
-def run_minimap(genome, transcripts):
-  return
+def run_minimap(genome, transcripts, out_paf, cpus=1):
+  """
+  Run Minimap2 to map transcripts
+  to genome.
+  """
+  command = ["minimap2", "-x", "splice:hq", "-uf", genome, transcripts, "-t", str(max(1, cpus-1))]
+  with open(out_paf, 'w') as fo:
+    process = subprocess.run(command, stdout=fo, stderr=subprocess.PIPE)
 
 def filter_paf(paf_path, min_qcov=0.95):
   """
@@ -436,8 +443,9 @@ def main():
   # Run minimap, if needed
   if args.transcripts:
     logging.info("Running Minimap2...")
+    args.mapping = os.path.join(args.output, os.path.basename(args.transcripts) + '_map.paf')
     try:
-      args.mapping = run_minimap(args.genome_fasta, args.transcripts)
+      run_minimap(args.genome_fasta, args.transcripts, args.mapping, cpus=args.cpus)
     except:
       logging.error("Minimap run failed. Terminating")
       sys.exit()
