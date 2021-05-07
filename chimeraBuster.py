@@ -254,18 +254,18 @@ def correct_exon(exon_feature, chrom_seq, max_coord=None, min_coord=None):
     elif max_coord:	# exon after gap
       search_region = (exon_feature.start, max_coord)
       search_for = start_codon
-
   search_region_seq = chrom_seq[search_region[0]:search_region[1]+1]
   if exon_feature.strand == '-':
     search_region_seq = search_region_seq.reverse_complement()
-  codons = [search_region_seq[i:i+3] for i in range(0,len(search_region_seq),3)]
+  codons = [str(search_region_seq[i:i+3]) for i in range(0,len(search_region_seq),3)]
   if min_coord:
     codons.reverse()
 
+  #print(codons)
   extend_to_codon = None	# index of codon where the corrected exon should end
   i = 0
   for codon in codons:
-    if str(codon) in search_for:
+    if codon in search_for:
       extend_to_codon = i
       break
     i += 1
@@ -289,6 +289,13 @@ def split_gene(gff_db, gene_feature, split_coords=[]):
   i = 1
   for pair in split_coords:
     start, end = pair
+    # CDSs in region
+    cds_in_region = list(gff_db.region((gene_feature.seqid,start,end), featuretype='CDS'))
+    cds_in_region.sort(key=lambda cds: cds.start)
+    # set start as start of first CDS in region
+    start = cds_in_region[0].start
+    # set end as end of last CDS in region
+    end = cds_in_region[-1].end
     # create the gene feature
     new_gene = deepcopy(gene_feature)
     new_gene_id = new_gene['ID'][0] + '_%s' % i
@@ -306,6 +313,8 @@ def split_gene(gff_db, gene_feature, split_coords=[]):
     all_features = [deepcopy(feat) for feat in gff_db.region(region=(gene_feature.seqid, start, end))]
     exons = list(filter(lambda feat: feat.featuretype == "exon", all_features))
     cds = list(filter(lambda feat: feat.featuretype == "CDS", all_features))
+    if len(exons) == 0 or len(cds) == 0:
+      continue
     exons.sort(key=lambda feat: feat.start)
     cds.sort(key=lambda feat: feat.start)
     # set start and end coordinates for first and last exon/CDS
@@ -324,7 +333,6 @@ def split_gene(gff_db, gene_feature, split_coords=[]):
     # add new features
     new_features.extend([new_gene, new_mrna] + exons + cds)
     i += 1
-
   return new_features
 
 def correct_chimeric_gene(gene_id, chimeric_genes, gff_db, mapping_regions, genome_seq_dict):
@@ -353,7 +361,7 @@ def correct_chimeric_gene(gene_id, chimeric_genes, gff_db, mapping_regions, geno
   gap_regions = sorted(list(gap_regions), key=lambda iv: iv.begin, reverse=rev)
 
   # split gene
-  chrom_seq = genome_seq_dict[gene_feature.seqid]
+  chrom_seq = genome_seq_dict[gene_feature.seqid].seq
   
   exons_before_gaps = []
   exons_after_gaps = []
