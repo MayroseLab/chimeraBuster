@@ -121,6 +121,27 @@ def refine_mapping_regions(iv_tree, mapping_regions, min_transcripts=2, ncpu=1):
       refined = refined.union(mr)
     return refined
 
+def detect_overlapping_genes(gff_db, min_overlap=0.1):
+  """
+  Scans the genome annotation for regions
+  containing overlapping genes. If the
+  fraction of overlap in both genes is
+  lower than min_overlap, the genes are
+  not considered overlapping.
+  Returns a set of overlapping gene IDs.
+  """
+  ol_set = set()
+  for gene in gff_db.features_of_type('gene', order_by='start'):
+    region = (gene.seqid, gene.start, gene.end)
+    overlapping_genes = list(gff_db.region(region, featuretype=['gene']))
+    if len(overlapping_genes) > 1:
+      for gene_pair in combinations(overlapping_genes, 2):
+        gene1 = Interval(gene_pair[0].start, gene_pair[0].end)
+        gene2 = Interval(gene_pair[1].start, gene_pair[1].end)
+        if intervals_frac_overlap(gene1, gene2) >= min_overlap and intervals_frac_overlap(gene2, gene1) >= min_overlap:
+          ol_set = ol_set.union(set([ol_gene['ID'][0] for ol_gene in gene_pair]))
+  return ol_set
+
 def detect_chimeras(gff_db, mapping_regions, min_intersect_frac=0.5):
   """
   Go through all genes and detect
@@ -130,9 +151,12 @@ def detect_chimeras(gff_db, mapping_regions, min_intersect_frac=0.5):
   that overlaps with the gene to be
   considered.
   """
+  overlapping_genes = detect_overlapping_genes(gff_db)
   chimeras = {}
   for gene in gff_db.features_of_type('gene'):
     gene_id = gene['ID'][0]
+    if gene_id in overlapping_genes:
+      continue
     chrom = gene.seqid
     if chrom not in mapping_regions:
       continue
