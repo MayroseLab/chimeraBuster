@@ -133,7 +133,7 @@ def ensure_id(gff_feature):
   elif 'Name' in gff_feature.attributes:
     gff_feature['ID'] = gff_feature['Name']
   elif 'Parent' in gff_feature.attributes:
-    gff_feature['ID'] = [gff_feature['Parent'] + '_%s' % gff_feature.featuretype]
+    gff_feature['ID'] = [gff_feature['Parent'][0] + '_%s' % gff_feature.featuretype]
   else:
     logging.error("Encountered a GFF feature with no ID, Name, or Parent attribute:\n{}".format(str(gff_feature)))
     sys.exit()
