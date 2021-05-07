@@ -324,9 +324,11 @@ def split_gene(gff_db, gene_feature, split_coords=[]):
     cds[-1].end = end
     # modify exon and CDS features
     for j in range(len(exons)):
+      exons[j].source = 'chimeraBuster'
       exons[j]['ID'][0] = '%s_exon_%s' %(new_mrna_id, j+1)
       exons[j]['Parent'][0] = str(new_mrna_id)
     for j in range(len(cds)):
+      cds[j].source = 'chimeraBuster'
       cds[j]['ID'][0] = '%s_CDS_%s' %(new_mrna_id, j+1)
       cds[j]['Parent'][0] = str(new_mrna_id)
 
