@@ -121,6 +121,24 @@ def refine_mapping_regions(iv_tree, mapping_regions, min_transcripts=2, ncpu=1):
       refined = refined.union(mr)
     return refined
 
+def ensure_id(gff_feature):
+  """
+  If a gff feature object has no ID
+  attribute, add one. The ID is taken
+  from the Name attribute, if it exists,
+  otherwise - generated based on Parent.
+  """
+  if 'ID' in gff_feature.attributes:
+    pass
+  elif 'Name' in gff_feature.attributes:
+    gff_feature['ID'] = gff_feature['Name']
+  elif 'Parent' in gff_feature.attributes:
+    gff_feature['ID'] = [gff_feature['Parent'] + '_%s' % gff_feature.featuretype]
+  else:
+    logging.error("Encountered a GFF feature with no ID, Name, or Parent attribute:\n{}".format(str(gff_feature)))
+    sys.exit()
+  return gff_feature  
+
 def detect_overlapping_genes(gff_db, min_overlap=0.1):
   """
   Scans the genome annotation for regions
@@ -462,7 +480,7 @@ def main():
   if args.gff:
     logging.info("Loading GFF from file...")
     db_path = os.path.join(args.output, os.path.basename(args.gff) + '.db')
-    gff_db = gffutils.create_db(args.gff, dbfn=db_path, keep_order=True, merge_strategy='create_unique', sort_attribute_values=True, verbose=args.verbose, force=True)
+    gff_db = gffutils.create_db(args.gff, dbfn=db_path, keep_order=True, merge_strategy='create_unique', sort_attribute_values=True, verbose=args.verbose, force=True, transform=ensure_id)
   else:
     logging.info("Loading GFF from DB...")
     db_path = args.gff_db
