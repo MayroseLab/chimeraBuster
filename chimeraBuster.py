@@ -74,22 +74,6 @@ def intervals_frac_overlap(iv1, iv2):
   """
   return iv1.overlap_size(iv2.begin, iv2.end) / iv1.length()
 
-def is_bridge(iv1, iv2, iv3):
-  """
-  Given 3 intervals, determines if
-  iv1 is a bridge connecting iv2 and iv3.
-  To be considered a bridge, iv2 and iv3
-  must *not* overlap, and iv1 must
-  connect them
-  """
-  # check if iv2 and iv3 overlap
-  if intervals_frac_overlap(iv2, iv3) > 0:
-    return False
-  # check if iv1 is bridge
-  if intervals_frac_overlap(iv1, iv2) > 0 and intervals_frac_overlap(iv1, iv3) > 0:
-    return True
-  return False
-
 def remove_outliers(intervals, dbscan_eps=300, dbscan_minPts=4, max_outlier_frac=0.2):
   """
   Given a set of intervals, detect
@@ -115,24 +99,6 @@ def remove_outliers(intervals, dbscan_eps=300, dbscan_minPts=4, max_outlier_frac
   if outlier_frac > max_outlier_frac:
     return intervals
   return set(df.query('cluster != "-1"')['interval'])
-
-#def detect_bridges(intervals, dbscan_eps=300, dbscan_minPts=4):
-#  """
-#  Given a set of intervals, detect
-#  intervals which "bridge over"
-#  other, non-connected intervals.
-#  """
-#  transcript_pairs = list(combinations(intervals, 2))
-#  for pair in transcript_pairs:
-#    if intervals_frac_overlap(pair[0], pair[1]):
-#      continue
-#    for interval in intervals:
-#      if is_bridge(interval, pair[0], pair[1]):
-#        pair_t = (pair[0], pair[1])
-#        if pair_t not in bridges:
-#          bridges[pair_t] = []
-#        bridges[pair_t].append(interval)
-#  return bridges
 
 def refine_mapping_regions(iv_tree, mapping_regions, min_transcripts=2, ncpu=1):
   """
