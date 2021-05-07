@@ -447,7 +447,21 @@ def main():
 
   if not os.path.exists(args.output):
     os.mkdir(args.output)
-  
+
+  # Read GFF
+  if args.gff:
+    logging.info("Loading GFF from file...")
+    db_path = os.path.join(args.output, os.path.basename(args.gff) + '.db')
+    gff_db = gffutils.create_db(args.gff, dbfn=db_path, keep_order=True, merge_strategy='create_unique', sort_attribute_values=True, verbose=args.verbose, force=True, transform=ensure_id)
+  else:
+    logging.info("Loading GFF from DB...")
+    db_path = args.gff_db
+  gff_db = gffutils.FeatureDB(db_path, keep_order=True)
+
+  # Read genome fasta
+  logging.info("Loading genome FASTA...")
+  chrom_seq = SeqIO.to_dict(SeqIO.parse(args.genome_fasta, "fasta"))
+ 
   # Run minimap, if needed
   if args.transcripts:
     logging.info("Running Minimap2...")
@@ -475,20 +489,6 @@ def main():
     for chrom in mapping_regions:
       logging.debug("Refining mapping regions on chromosome {}...".format(chrom))
       mapping_regions[chrom] = refine_mapping_regions(mapping_intervals[chrom], mapping_regions[chrom], min_transcripts=args.min_transcripts, ncpu=args.cpus)
-
-  # Read GFF
-  if args.gff:
-    logging.info("Loading GFF from file...")
-    db_path = os.path.join(args.output, os.path.basename(args.gff) + '.db')
-    gff_db = gffutils.create_db(args.gff, dbfn=db_path, keep_order=True, merge_strategy='create_unique', sort_attribute_values=True, verbose=args.verbose, force=True, transform=ensure_id)
-  else:
-    logging.info("Loading GFF from DB...")
-    db_path = args.gff_db
-  gff_db = gffutils.FeatureDB(db_path, keep_order=True)
-
-  # Read genome fasta
-  logging.info("Loading genome FASTA...")
-  chrom_seq = SeqIO.to_dict(SeqIO.parse(args.genome_fasta, "fasta"))
 
   # Detect chimeric genes
   logging.info("Detecting chimeric genes...")
