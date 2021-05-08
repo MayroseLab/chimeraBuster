@@ -60,5 +60,24 @@ The tool applies a series of steps to achieve its goal:
 6. Correct (break) chimeric genes - chimeras are broken according to the mapping regions, and the starts/ends of the new genes are corrected by searching for start/stop codons.
 
 ### Inputs and parameters
+| Parameter  | Description |
+| ------------- | ------------- |
+| -g GFF, --gff GFF | Input annotation, in GFF3 format. All features must have an ID, or Name, or Parent attribute. |
+| -f GENOME_FASTA, --genome_fasta GENOME_FASTA | Input genome in FASTA format. Record names must match the ones in the GFF3 file. |
+| -t TRANSCRIPTS, --transcripts TRANSCRIPTS | Transcripts to be mapped to the genome, in FASTA format. Prefereably high quality cDNA or transcriptome assembly. |
+| -m MAPPING, --mapping MAPPING | Instead of providing transcript sequences, provide transcripts mapping to the genome, in minimap2 PAF format. |
+| -d GFF_DB, --gff_db GFF_DB | Instead of providing a GFF file, use a [gffutils](https://pythonhosted.org/gffutils/) GFF DB from a previous run |
+| -o OUTPUT, --output OUTPUT | A path where all intermediate and result files will be written to. The directory will be created if it does not already exists. Will override results from previous runs. |
+| -r, --do_not_refine | Skip mapping region refining step for a quick-and-dirty analysis (not recommended) |
+| -n MIN_TRANSCRIPTS, --min_transcripts MIN_TRANSCRIPTS | Minimum number of transcripts in a mapping region (2 by default). Mapping regions with less transcripts will be ignored and no chimeras will be detected based on these regions. |
+| -q MIN_QUERY_COV, --min_query_cov MIN_QUERY_COV | Minimum transcript query coverage (0-1, 0.95 by default). This cutoff will be used when filtering transcript mappings. Query coverage is calculated as the number of matches devided by the query length. |
+| -c CPUS, --cpus CPUS | Number of CPUs to use for running Minimap2 and for refining mapping regions. |
+| -v, --verbose | Increase verbosity. Mainly useful for debugging. |
 
 ### Outputs
+The final outputs are written to the output directory:  
+* chimeric_genes.list - a list of gene IDs detected as putative chimeras.
+* <input GFF base name>.corrected.gff - a GFF3 file with chimeric genes broken into multiple genes. The source of these genes is set to 'chimeraBuster' and indicative IDs are assigned.
+
+Note that in cases where breaking chimeric genes cannot be performed reliably, genes listed as putatively chimeric will be kept unchanged.  
+In addition, chimeraBuster ignores overlapping genes since they cannot be reliably analyzed based on transcript data.
