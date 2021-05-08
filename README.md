@@ -44,7 +44,19 @@ optional arguments:
 $ python chimeraBuster.py -g test/genes.gff -f test/genome.fasta -t test/transcripts.fasta -o test_result
 ```
 A new directory called test_result should be created. The list of genes detected as chimeric can be found in test_result/chimeric_genes.list (should include three genes) and the gff with corrected genes is at test_result/genes.gff.corrected.gff.
+
 ### How does it work?
+chimeraBuster detects and corrects chimeric gene annotation based on transcript (cDNA) alignments. The main inputs are:
+* The genome sequence
+* The annotation to be corrected
+* Transcript sequences
+The tools applies a series of steps to achieve its goal:
+1. Map transcript sequences to the genome (using Minimap2).
+2. Filter transcript mappings by removing ones with low query coverage.
+3. Determine transript "mapping regions" - this are genomic regions where multiple transcripts are mapped. Overlapping regions are merged into longer regions.
+4. Refine mapping regions - the purpose of this step is to remove "outlier" mappings. Usually these are mappings bridging over two (or more) otherwise non-overlapping mapping regions. Outliers are removed and mapping regions are re-computed.
+5. Detect chimeric genes - a gene model spanning more than one mapping region is considered a putative chimeric gene.
+6. Correct (break) chimeric genes - chimeras are broken according to the mapping regions, and the starts/ends of the new genes are corrected by searching for start/stop codons.
 
 ### Inputs and parameters
 
