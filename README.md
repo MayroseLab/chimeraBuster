@@ -77,7 +77,7 @@ The tool applies a series of steps to achieve its goal:
 ### Outputs
 The final outputs are written to the output directory:  
 * chimeric_genes.list - a list of gene IDs detected as putative chimeras.
-* <input GFF base name>.corrected.gff - a GFF3 file with chimeric genes broken into multiple genes. The source of these genes is set to 'chimeraBuster' and indicative IDs are assigned.
+* \<input GFF base name\>.corrected.gff - a GFF3 file with chimeric genes broken into multiple genes. The source of these genes is set to 'chimeraBuster' and indicative IDs are assigned.
 
 Note that in cases where breaking chimeric genes cannot be performed reliably, genes listed as putatively chimeric will be kept unchanged.  
 In addition, chimeraBuster ignores overlapping genes since they cannot be reliably analyzed based on transcript data.
