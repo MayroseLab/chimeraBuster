@@ -49,8 +49,9 @@ A new directory called test_result should be created. The list of genes detected
 chimeraBuster detects and corrects chimeric gene annotation based on transcript (cDNA) alignments. The main inputs are:
 * The genome sequence
 * The annotation to be corrected
-* Transcript sequences
-The tools applies a series of steps to achieve its goal:
+* Transcript sequences  
+
+The tool applies a series of steps to achieve its goal:
 1. Map transcript sequences to the genome (using Minimap2).
 2. Filter transcript mappings by removing ones with low query coverage.
 3. Determine transript "mapping regions" - this are genomic regions where multiple transcripts are mapped. Overlapping regions are merged into longer regions.
