@@ -54,8 +54,8 @@ chimeraBuster detects and corrects chimeric gene annotation based on transcript 
 The tool applies a series of steps to achieve its goal:
 1. Map transcript sequences to the genome (using Minimap2).
 2. Filter transcript mappings by removing ones with low query coverage.
-3. Determine transript "mapping regions" - this are genomic regions where multiple transcripts are mapped. Overlapping regions are merged into longer regions.
-4. Refine mapping regions - the purpose of this step is to remove "outlier" mappings. Usually these are mappings bridging over two (or more) otherwise non-overlapping mapping regions. Outliers are removed and mapping regions are re-computed.
+3. Determine transript "mapping regions" - these are genomic regions where multiple transcripts are mapped. Overlapping regions are merged into longer regions.
+4. Refine mapping regions - the purpose of this step is to remove "outlier" mappings. Usually these are mappings bridging over two (or more) otherwise non-overlapping mapping regions. Outliers are detected using the DBSCAN clustering algorithm, and removed. Mapping regions are re-computed.
 5. Detect chimeric genes - a gene model spanning more than one mapping region is considered a putative chimeric gene.
 6. Correct (break) chimeric genes - chimeras are broken according to the mapping regions, and the starts/ends of the new genes are corrected by searching for start/stop codons.
 
