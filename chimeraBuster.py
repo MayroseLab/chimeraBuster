@@ -1,21 +1,36 @@
-"""
+#!/usr/bin/env python
 
 """
+chimeraBuster is a tool for correcting chimeric gene annotations.
+For further information please visit the tool Github:
+https://github.com/MayroseLab/chimeraBuster
+"""
 
+# Built-in/Generic Imports
 from argparse import ArgumentParser
 import os
 import sys
 import logging
+from copy import deepcopy
+from itertools import combinations, chain
+from multiprocessing import Pool
+import subprocess
+
+# Libs
 import gffutils
 from intervaltree import IntervalTree, Interval
 from pafpy import PafFile
 from Bio import SeqIO
-from copy import deepcopy
-from itertools import combinations, chain
 from sklearn.cluster import DBSCAN
 import pandas as pd
-from multiprocessing import Pool
-import subprocess
+
+__author__ = "Lior Glick"
+__license__ = "MIT"
+__version__ = "0.1.0"
+__maintainer__ = "Lior Glick"
+__status__ = "Dev"
+
+# FUNCTIONS
 
 def run_minimap(genome, transcripts, out_paf, cpus=1):
   """
@@ -531,5 +546,6 @@ def main():
 
   logging.info("chimeraBuster is done!")
 
+# MAIN
 if __name__ == "__main__":
   main()
