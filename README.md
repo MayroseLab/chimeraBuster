@@ -1,5 +1,6 @@
 # chimeraBuster
 chimeraBuster is a tool for correcting chimeric gene annotations.  
+![chimeraBuster](chimeraBuster.png)
 
 ## Installation and running
 chimeraBuster was tested on Linux, but should also run on Windows/Mac.  
