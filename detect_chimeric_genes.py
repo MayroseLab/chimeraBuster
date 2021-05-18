@@ -118,7 +118,7 @@ def find_mapping_regions(iv_dict, overlaps_min_frac=0.05):
     """
     res = deepcopy(iv_dict)
     for chrom in res:
-        res[chrom].merge_overlaps_min_frac(overlaps_min_frac=overlaps_min_frac, data_reducer=lambda iv1, iv2: iv1 + iv2)
+        res[chrom].merge_overlaps_min_frac(min_frac=overlaps_min_frac, data_reducer=lambda iv1, iv2: iv1 + iv2)
     n_mr = sum([len(res[chrom]) for chrom in res])
     logging.info("{} mapping regions detected.".format(n_mr))
     return res
