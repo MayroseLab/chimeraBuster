@@ -160,6 +160,15 @@ def remove_outliers(intervals, dbscan_eps=300, dbscan_minPts=4, max_outlier_frac
     return set(df.query('cluster != "-1"')['interval'])
 
 
+def slice_min_frac(iv_tree, start, end, min_frac=0.05):
+    """
+    Equivalent to iv_tree[start:end], but discards
+    overlaps with fraction < min_frac
+    """
+    range_interval = Interval(start, end)
+    overlap_ivs = iv_tree[start:end]
+    return list(filter(lambda iv: intervals_frac_overlap(iv, range_interval) >= min_frac, overlap_ivs))
+
 def refine_mapping_regions(iv_tree, mapping_regions, min_transcripts=2, ncpu=1):
     """
     Works through rough mapping regions
@@ -167,10 +176,10 @@ def refine_mapping_regions(iv_tree, mapping_regions, min_transcripts=2, ncpu=1):
     intervals
     """
     # check if enough transcripts in MR
-    large = lambda mr: len(iv_tree[mr.begin:mr.end]) >= min_transcripts
+    large = lambda mr: len(slice_min_frac(iv_tree, mr.begin, mr.end)) >= min_transcripts
     mapping_regions_filter = IntervalTree(filter(large, mapping_regions))
     # remove outliers
-    transcripts_per_mr = [iv_tree[mr.begin:mr.end] for mr in mapping_regions_filter]
+    transcripts_per_mr = [slice_min_frac(iv_tree, mr.begin, mr.end) for mr in mapping_regions_filter]
     with Pool(ncpu) as pool:
         transcripts_per_mr_rem_outliers = pool.map(remove_outliers, transcripts_per_mr)
         # transcripts_per_mr_rem_outliers is a list of sets of Intervals
