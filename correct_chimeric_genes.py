@@ -162,7 +162,7 @@ def main():
 
     if not os.path.exists(args.output):
         os.mkdir(args.output)
-    """
+    
     # Create mapping regions bed
     logging.info("Creating mapping regions bed...")
     mapping_regions_bed = os.path.join(args.output, 'chimeric_mapping_regions.bed')
@@ -217,7 +217,7 @@ def main():
     if err:
         logging.error("An error occurred while running PASA. Error message: {}".format(err))
         sys.exit()
-    """
+    
     # Create GFF of new gene models
     logging.info("Writing corrected gene models to GFF...")
     # locate and load PASA output gff
