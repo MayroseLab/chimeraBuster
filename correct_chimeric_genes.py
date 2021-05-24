@@ -83,9 +83,12 @@ def convert_to_genome_coords(gff_db):
     Returns a list of gff lines.
     """
     gff_lines = []
+    gi = 1
     for gene in gff_db.features_of_type('gene', order_by='start'):
         # convert gene feature
         gene_id, chrom, mr_start = parse_seqid(gene)
+        gene_id += '_%s' % gi
+        gi += 1
         gene.seqid = chrom
         gene.start += mr_start
         gene.end += mr_start
