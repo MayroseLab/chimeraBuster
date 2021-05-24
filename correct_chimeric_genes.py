@@ -128,6 +128,7 @@ def write_final_gff(orig_gff_db, chimeric_genes_list, new_lines, final_gff):
     """
     chimeric_gene_ids = set([line.strip().split('\t')[0] for line in open(chimeric_genes_list)])
     with open(final_gff, 'w') as fo:
+        print('##gff-version 3', file=fo)
         for gene in orig_gff_db.features_of_type('gene'):
             if gene['ID'][0] not in chimeric_gene_ids:
                 print(str(gene), file=fo)
